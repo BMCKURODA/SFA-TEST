@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SFA疑似体験システム - Signal View</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-main: #f8fafc;
+            --border: #e2e8f0;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; font-family: 'Noto Sans JP', sans-serif; }
+        body { margin: 0; padding: 0; background-color: var(--bg-main); color: var(--text-dark); }
+
+        /* Excel風タブ切り替え */
+        .system-tabs {
+            background-color: #dee2e6;
+            padding: 8px 16px 0 16px;
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid #ccc;
+        }
+        .tab-btn {
+            padding: 10px 24px;
+            background-color: #e9ecef;
+            border: 1px solid #ccc;
+            border-bottom: none;
+            border-radius: 6px 6px 0 0;
+            font-size: 14px;
+            cursor: pointer;
+            color: #495057;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background-color: #ffffff;
+            color: #107c41;
+            border-bottom: 3px solid #107c41;
+            margin-bottom: -1px;
+            position: relative;
+            z-index: 2;
+        }
+        .tab-btn i { margin-right: 8px; }
+
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 25px;
+            display: block;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ヘッダー */
+        .main-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 20px;
+            margin-bottom: 25px;
+        }
+        .header-title h1 { margin: 0; font-size: 26px; font-weight: 700; color: var(--text-dark); }
+        .header-title p { margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px; }
+
+        /* ドロップエリア */
+        .upload-zone {
+            background-color: #ffffff;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 30px;
+        }
+        .upload-zone:hover { border-color: var(--primary); background-color: #f0f7ff; }
+        .upload-zone i { font-size: 40px; color: var(--primary); margin-bottom: 12px; }
+        .upload-zone h3 { margin: 0 0 8px 0; font-size: 18px; color: #334155; }
+        .upload-zone p { margin: 0; color: var(--text-muted); font-size: 14px; }
+
+        /* エラー・ログ通知エリア */
+        .status-box {
+            background-color: #f1f5f9;
+            border-left: 4px solid var(--text-muted);
+            padding: 15px 20px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 25px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .error-alert {
+            background-color: #fef2f2;
+            border-left: 4px solid var(--danger);
+            color: #991b1b;
+        }
+
+        /* 🟢 最上段スコアカード */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+        .metric-card {
+            background-color: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+        .metric-title { font-size: 13px; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; display: flex; justify-content: space-between; }
+        .metric-title .target { color: #94a3b8; font-size: 11px; }
+        .metric-value { font-size: 30px; font-weight: 700; color: var(--text-dark); font-family: 'DM Sans', sans-serif; letter-spacing: -1px; }
+        .metric-footer { margin-top: 8px; font-size: 12px; font-weight: 500; }
+
+        /* メイン格子 */
+        .layout-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+        .card { background-color: #ffffff; border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+        .card-title { font-size: 16px; color: var(--text-dark); font-weight: 700; margin: 0 0 20px 0; display: flex; align-items: center; gap: 10px; }
+        .card-title i { color: var(--primary); }
+
+        /* テーブル設定 */
+        .sfa-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .sfa-table th, .sfa-table td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; }
+        .sfa-table th { background-color: #f8fafc; color: var(--text-muted); font-weight: 600; }
+        
+        /* スライサーボタンのスタイル */
+        .slicer-container { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+        .slicer-btn {
+            padding: 8px 16px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background-color: #ffffff;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .slicer-btn.active {
+            background-color: #f0f7ff;
+            border-color: var(--primary);
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .legend-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+    </style>
+</head>
+<body>
+
+<div class="system-tabs">
+    <button class="tab-btn active" onclick="switchTab('tab1', this)"><i class="fa-solid fa-chart-line"></i>1. 全社・拠点・チーム集計</button>
+    <button class="tab-btn" onclick="switchTab('tab2', this)"><i class="fa-solid fa-user"></i>2. 個人別詳細データ</button>
+</div>
+
+<div class="dashboard-container">
+    
+    <div class="main-header">
+        <div class="header-title">
+            <h1>SFA 疑似体験ダッシュボードシステム「Signal View」</h1>
+            <p>社内基礎表(Excel)をドラッグ＆ドロップするだけで全自動リアルタイム解析・合算</p>
+        </div>
+        <div id="statusBadge" class="status-box" style="margin: 0; padding: 6px 16px; background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; border-left: none;">
+            <span><i class="fa-solid fa-circle-check"></i> システム待機中</span>
+        </div>
+    </div>
+
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <h3>ここに営業個人用の「基礎表エクセル」をドロップしてください</h3>
+        <p>※複数ファイルをまとめて選択してドロップすることも可能です（.xlsx 形式対応）</p>
+        <input type="file" id="fileInput" multiple accept=".xlsx" style="display: none;" onchange="handleFileSelect(event)">
+    </div>
+
+    <div id="logConsole" class="status-box">
+        <span id="logMessage"><i class="fa-solid fa-info-circle"></i> 【使い方】営業メンバーの基礎表ファイルを上の枠内にドロップすると、売上・粗利・件数が即座に再計算されます。</span>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card" style="border-top: 4px solid var(--primary);">
+            <div class="metric-title">全社 年間売上実績 <span class="target">目標: 34.7億円</span></div>
+            <div class="metric-value" id="valYearSales">1,156,444,677</div>
+            <div class="metric-footer">年間進捗率: <span class="text-blue" id="pctYearSales">33.3%</span></div>
+        </div>
+        <div class="metric-card" style="border-top: 4px solid var(--success);">
+            <div class="metric-title">全社 年間粗利実績 <span class="target">目標: 7.18億円</span></div>
+            <div class="metric-value" id="valYearProfit">247,565,062</div>
+            <div class="metric-footer">年間進捗率: <span class="text-green" id="pctYearProfit">34.4%</span></div>
+        </div>
+        <div class="metric-card" style="border-top: 4px solid var(--warning);">
+            <div class="metric-title">当月度(5月) 売上実績 <span class="target">当月目標: 3.0億円</span></div>
+            <div class="metric-value" id="valMonthSales">312,450,000</div>
+            <div class="metric-footer">月間達成率: <span style="color:#d97706; font-weight:bold;" id="pctMonthSales">104.1% 達成！</span></div>
+        </div>
+        <div class="metric-card" style="border-top: 4px solid var(--danger);">
+            <div class="metric-title">当月度(5月) 粗利実績 <span class="target">当月目標: 6,200万円</span></div>
+            <div class="metric-value" id="valMonthProfit">63,840,000</div>
+            <div class="metric-footer">月間達成率: <span style="color:#dc2626; font-weight:bold;" id="pctMonthProfit">102.9% 達成！</span></div>
+        </div>
+    </div>
+
+    <div id="tab1" class="tab-content active">
+        <div class="layout-grid">
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-building"></i> 拠点別・チーム別 売上実績比較</div>
+                    <div style="height: 280px; position: relative;">
+                        <canvas id="chartTeam"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title"><i class="fa-solid fa-folder-tree"></i> パイプライン・案件数サマリー</div>
+                <table class="sfa-table">
+                    <thead>
+                        <tr>
+                            <th>商談フェーズ</th>
+                            <th style="text-align: right;">案件数</th>
+                            <th style="text-align: right;">合計金額(円)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryTableBody">
+                        <tr><td><span class="legend-indicator" style="background:#10b981;"></span>受注残</td><td style="text-align: right; font-weight:bold;">42 件</td><td style="text-align: right; font-family:'DM Sans';">512,400,000</td></tr>
+                        <tr><td><span class="legend-indicator" style="background:#3b82f6;"></span>A商談</td><td style="text-align: right; font-weight:bold;">28 件</td><td style="text-align: right; font-family:'DM Sans';">310,500,000</td></tr>
+                        <tr><td><span class="legend-indicator" style="background:#f59e0b;"></span>B商談</td><td style="text-align: right; font-weight:bold;">35 件</td><td style="text-align: right; font-family:'DM Sans';">198,200,000</td></tr>
+                        <tr><td><span class="legend-indicator" style="background:#ef4444;"></span>C商談</td><td style="text-align: right; font-weight:bold;">19 件</td><td style="text-align: right; font-family:'DM Sans';">95,344,677</td></tr>
+                        <tr><td><span class="legend-indicator" style="background:#94a3b8;"></span>D商談</td><td style="text-align: right; font-weight:bold;">12 件</td><td style="text-align: right; font-family:'DM Sans';">40,000,000</td></tr>
+                        <tr style="background-color: #f8fafc; font-weight: bold; border-top: 2px solid var(--border);">
+                            <td>総合計</td><td style="text-align: right; color:var(--primary);" id="totalCount">136 件</td><td style="text-align: right; font-family:'DM Sans';" id="totalAmount">1,156,444,677</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab2" class="tab-content">
+        <div class="card">
+            <div class="card-title"><i class="fa-solid fa-user-gear"></i> 担当者個別フィルター (マイページ選択)</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: -10px; margin-bottom: 15px;">見たい営業担当のボタンを押してください。その人の「商談内訳」と「達成率」に画面全体が切り替わります。</p>
+            
+            <div class="slicer-container" id="slicerArea">
+                <button class="slicer-btn active" onclick="filterPersonal('all', this)">全員分を表示</button>
+                <button class="slicer-btn" onclick="filterPersonal('高橋', this)">高橋 担当</button>
+                <button class="slicer-btn" onclick="filterPersonal('高野', this)">高野 担当</button>
+                <button class="slicer-btn" onclick="filterPersonal('溝渕', this)">溝渕 担当</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+                <div>
+                    <h4 style="margin:0 0 15px 0; color:var(--text-dark);">📊 フェーズ別 案件保有金額</h4>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="chartPersonalPhase"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h4 style="margin:0 0 15px 0; color:var(--text-dark);">🎯 当月目標に対する個人達成率</h4>
+                    <table class="sfa-table" style="margin-top: 10px;">
+                        <thead>
+                            <tr><th>項目</th><th style="text-align: right;">目標値</th><th style="text-align: right;">現在の見込</th><th style="text-align: right;">達成率</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>月間売上</td><td style="text-align: right;">30,000 千円</td><td style="text-align: right; color:var(--primary); font-weight:bold;" id="pSales">79,100 千円</td><td style="text-align: right; font-weight: bold; color:var(--success);" id="pSalesPct">263.7%</td></tr>
+                            <tr><td>月間粗利</td><td style="text-align: right;">6,000 千円</td><td style="text-align: right; color:var(--primary); font-weight:bold;" id="pProfit">15,820 千円</td><td style="text-align: right; font-weight: bold; color:var(--success);" id="pProfitPct">263.7%</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // タブ切り替え制御
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    // グローバルデータ保持用（ダミー初期値）
+    let globalSalesData = {
+        yearSalesTarget: 3470000000, yearSalesActual: 1156444677,
+        yearProfitTarget: 718265000, yearProfitActual: 247565062,
+        monthSalesTarget: 300000000, monthSalesActual: 312450000,
+        monthProfitTarget: 62000000, monthProfitActual: 63840000
+    };
+
+    // グラフオブジェクトの初期化
+    let teamChart, personalChart;
+
+    window.onload = function() {
+        initCharts();
+        setupDragAndDrop();
+    };
+
+    function initCharts() {
+        // 1. チーム別比較グラフ (初期サンプル表示)
+        const ctxTeam = document.getElementById('chartTeam').getContext('2d');
+        teamChart = new Chart(ctxTeam, {
+            type: 'bar',
+            data: {
+                labels: ['大阪本社 1チーム(高橋ら)', '大阪本社 2チーム', '東京支社 営業組'],
+                datasets: [
+                    { label: '受注残', data: [189200000, 150000000, 173200000], backgroundColor: '#10b981' },
+                    { label: 'A商談', data: [150300000, 100000000, 60200000], backgroundColor: '#3b82f6' },
+                    { label: 'B商談', data: [50000000, 78200000, 70000000], backgroundColor: '#f59e0b' },
+                    { label: 'C/D商談', data: [31000000, 35500000, 68944677], backgroundColor: '#ef4444' }
+                ]
+            },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } }
+        });
+
+        // 2. 個人別詳細フェーズグラフ
+        const ctxPersonal = document.getElementById('chartPersonalPhase').getContext('2d');
+        personalChart = new Chart(ctxPersonal, {
+            type: 'doughnut',
+            data: {
+                labels: ['受注残', 'A商談', 'B商談', 'C商談', 'D商談'],
+                datasets: [{ data: [45000, 25000, 5600, 3500, 0], backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#94a3b8'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    // ドラッグ＆ドロップおよびファイル選択のイベント設定
+    function setupDragAndDrop() {
+        const dropZone = document.getElementById('dropZone');
+        
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#f0f7ff'; }, false);
+        });
+
+        ['draglave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#ffffff'; }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            processExcelFiles(files);
+        }, false);
+    }
+
+    function handleFileSelect(e) {
+        const files = e.target.files;
+        processExcelFiles(files);
+    }
+
+    // 🛠️ 本番解析コア：高橋さんらの「基礎表」エクセルをリアルタイムで解析する処理
+    function processExcelFiles(files) {
+        if(files.length === 0) return;
+        
+        const consoleBox = document.getElementById('logConsole');
+        const logMsg = document.getElementById('logMessage');
+        
+        consoleBox.className = "status-box"; // リセット
+        logMsg.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ファイルの解析を行っています...`;
+
+        // 実際の運用ではここでSheetJSを使いエクセルの特定セル（高橋さんのC列や4行目）を抽出
+        // 今回は疑似体験版として、ファイルが投入されたらエラー判定ロジックと連動して数字が「本物の高橋さんデータ」に瞬時に書き換わるコードを実装
+        setTimeout(() => {
+            let hasError = false;
+            let fileNames = [];
+            for(let i=0; i<files.length; i++) {
+                fileNames.push(files[i].name);
+                // エラー検知のデモ：もしファイル名に「バグ」や「error」が入っていたら即座に原因特定アラートを出す
+                if(files[i].name.includes("エラー") || files[i].name.includes("bug")) {
+                    hasError = true;
+                }
+            }
+
+            if(hasError) {
+                consoleBox.className = "status-box error-alert";
+                logMsg.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <strong>【解析エラー】</strong> 投入されたファイル内に異常値を発見しました。「営業B_基礎表.xlsx」の12行目、金額欄に『未定』という日本語テキストが混入しているため計算をスキップしました。`;
+                document.getElementById('statusBadge').innerHTML = `<span><i class="fa-solid fa-circle-xmark" style="color:#ef4444;"></i> 要修正</span>`;
+                document.getElementById('statusBadge').style.backgroundColor = '#fef2f2';
+                document.getElementById('statusBadge').style.color = '#ef4444';
+                return;
+            }
+
+            // 正常終了：手元の本物の管理表（image_fad0e0.png）の数字に1コマで完全同期！！
+            logMsg.innerHTML = `<i class="fa-solid fa-circle-check" style="color:#10b981;"></i> <strong>【集計完了】</strong> ${fileNames.join(', ')} を正常に合算しました。横長データを自動で縦長パースし、案件数を正確に再カウントしました。`;
+            
+            // 最上段の数字をリアルタイムで書き換え
+            document.getElementById('valYearSales').innerText = "1,156,444,677";
+            document.getElementById('valYearProfit').innerText = "247,565,062";
+            
+            // グラフと内訳の値をアップデート
+            teamChart.data.datasets[0].data = [210000000, 160000000, 142400000];
+            teamChart.update();
+
+            document.getElementById('statusBadge').innerHTML = `<span><i class="fa-solid fa-circle-check"></i> 最新データ同期済</span>`;
+            document.getElementById('statusBadge').style.backgroundColor = '#ecfdf5';
+            document.getElementById('statusBadge').style.color = '#059669';
+
+        }, 1200);
+    }
+
+    // 個人フィルター（マイページ機能）の切り替えロジック
+    function filterPersonal(person, btn) {
+        document.querySelectorAll('.slicer-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const pSales = document.getElementById('pSales');
+        const pSalesPct = document.getElementById('pSalesPct');
+        const pProfit = document.getElementById('pProfit');
+        const pProfitPct = document.getElementById('pProfitPct');
+
+        if(person === '高橋') {
+            // 高橋さんのリアル基礎表（image_06b4af.png）のデータに瞬時に同期！
+            pSales.innerText = "79,100 千円";
+            pSalesPct.innerText = "263.7%";
+            pProfit.innerText = "15,820 千円";
+            pProfitPct.innerText = "263.7%";
+            personalChart.data.datasets[0].data = [45000, 25000, 5600, 3500, 0];
+        } else if(person === '高野') {
+            pSales.innerText = "28,500 千円";
+            pSalesPct.innerText = "95.0%";
+            pProfit.innerText = "5,700 千円";
+            pProfitPct.innerText = "95.0%";
+            personalChart.data.datasets[0].data = [15000, 10000, 3500, 0, 0];
+        } else {
+            pSales.innerText = "79,100 千円";
+            pSalesPct.innerText = "263.7%";
+            pProfit.innerText = "15,820 千円";
+            pProfitPct.innerText = "263.7%";
+            personalChart.data.datasets[0].data = [42000, 28000, 35000, 19000, 12000];
+        }
+        personalChart.update();
+    }
+</script>
+</body>
+</html>
